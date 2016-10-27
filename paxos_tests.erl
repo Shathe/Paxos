@@ -428,17 +428,18 @@ no_hay_decision_si_particionado() ->
     NumServ = 5,
     L_N = lists:seq(1,NumServ),
     S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
+    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])),
+	particionar( [ servidores([1,2]), servidores([3]), servidores([4,5]) ] ) end, L_N),
     
     timer:sleep(?T_ESPERA),
 
-    particionar( [ servidores([1]), servidores([2]), servidores([4]), servidores([3]), servidores([5]) ] ),
 
     paxos:start_instancia('n2@127.0.0.1', 1, "11"),
-    
+
     %% no hay ninguna mayoría luego no puede haber ningun valor
     comprobar_max(S, 1, 0),
-  
+          paxos:start_instancia('n5@127.0.0.1', 1, "11"),
+    comprobar_max(S, 1, 0),
      % parar VMs Erlang
     lists:foreach(fun(X) -> paxos:stop(X) end, S ),
     
@@ -454,13 +455,12 @@ no_hay_decision_si_particionado2() ->
     NumServ = 5,
     L_N = lists:seq(1,NumServ),
     S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
+    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X]),
+	particionar( [ servidores([1,2,3]), servidores([3,4,5]) ] )) end, L_N),
     
     timer:sleep(?T_ESPERA),
 
-    particionar( [ servidores([1,2,3]), servidores([3,4,5]) ] ),
-
-    paxos:start_instancia('n2@127.0.0.1', 1, "11"),
+       paxos:start_instancia('n2@127.0.0.1', 1, "11"),
     
     %% no hay ninguna mayoría luego no puede haber ningun valor
     comprobar_max(S, 1, 0),

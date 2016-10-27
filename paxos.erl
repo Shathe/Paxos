@@ -353,8 +353,8 @@ bucle_recepcion(Servidores, Yo, BDInstancias) ->
 		bucle_recepcion(Servidores, Yo, BDInstancias);
 
         {limitar_acceso, Nodos} ->  % Limita acceso a solo Nodos
-	io:format("En nodo ~p solo se acepta a ~p~n",[node(), Nodos]),
 		error_logger:tty(false), 
+		io:format("En nodo ~p solo se acepta a ~p ~p~n",[node(), Nodos, net_kernel:allow(Nodos)]),
 		net_kernel:allow(Nodos),
 		bucle_recepcion(Servidores, Yo, BDInstancias);
        
