@@ -10,19 +10,17 @@
 
 -module(datos_paxos).
 -compile(export_all).
--export([crearRegistro/1, setServidores/2, setFiabilidad/2, setNumMensajes/2, getFiabilidad/1,
-	getNumMensajes/1, getServidores/1, addInstanciaProponente/2, getInstanciasProponentes/1, existeInstanciaProponentes/2, existeRegistro/2,
+-export([setFiabilidad/2, setNumMensajes/2, getFiabilidad/1,
+	getNumMensajes/1, addInstanciaProponente/2, getInstanciasProponentes/1, existeInstanciaProponentes/2, existeRegistro/2,
 	addInstanciaAceptador/2, getInstanciasAceptadores/1, existeInstanciaAceptadores/2, getRegistroValor/2, mensajeAdd/1,
 	getInstanciaMaximaVista/1 ,getInstanciaMinima/1, setInstanciaMinima/2, intentarSetInstanciaMaximaVista/2 ,setRegistro/2, borrarEntradaRegistro/2]).
 -record(paxos, {fiabilidad = fiable,
                 num_mensajes = 0,
-                servidores = [],
 		instanciaMaxima = 0,
 		instanciaMinima = 0,
 		instanciasProponentes = dict:new(),
 		instanciasAceptadores = dict:new(),
-		registro = dict:new(),
-                yo}).
+		registro = dict:new()}).
                 
 
 
@@ -30,11 +28,8 @@
 
 %%%%%%%%%%% FUNCIONES DE ACCESO Y MANIPULACION DE LA ESTRUCTURA DE DATOS GETS AND SETS
 
-crearRegistro(Me) ->
-	#paxos{yo=Me}.
-
-setServidores(Registro, Servs) ->
-	Registro#paxos{servidores=Servs}.
+crearRegistro() ->
+	#paxos{}.
 
 addInstanciaProponente(Registro, {Numero, Valor}) ->
 	Registro#paxos{instanciasProponentes=dict:append(Numero, Valor, getInstanciasProponentes(Registro))}.
@@ -60,8 +55,6 @@ getFiabilidad(Registro) ->
 getNumMensajes(Registro) ->
 	Registro#paxos.num_mensajes.
 
-getServidores(Registro) ->
-	Registro#paxos.servidores.
 
 getInstanciaMaximaVista(Registro) ->
 	Registro#paxos.instanciaMaxima.

@@ -13,7 +13,7 @@
 -export([comm_no_fiable/1, limitar_acceso/2, stop/1, vaciar_buzon/0]).
 -export([n_mensajes/1]).
 -export([ponte_sordo/1, escucha/1]).              
--export([init/2]).
+-export([init/1]).
 -export([minimasInstanciasNodos/1, calculoMinimo/2, enviarEstado/2 ]).
 
 -define(MODULEACEPTADOR, aceptador).
@@ -58,7 +58,7 @@ start(Servidores, Host, NombreNodo) ->
     {ok, Nodo} = slave:start(Host, NombreNodo, Args),
     io:format("Nodo esclavo en marcha~n",[]),
     process_flag(trap_exit, true),
-    spawn_link(Nodo, ?MODULE, init, [Servidores,Nodo]).
+    spawn_link(Nodo, ?MODULE, init, [Servidores]).
 
 
 %%-----------------------------------------------------------------------------
@@ -227,22 +227,22 @@ n_mensajes(NodoPaxos) ->
 
 
 %%Se inicializa el servidor Paxos
-init(Servidores, Yo) ->
+init(Servidores) ->
 	io:format("Nodo inicializado ~p~n",[node()]),
 	register(paxos, self()),
 	%%Se crea los datos que maneja paxos y el proceso proponente y acpetador
-	BDInstancias = datos_paxos:crearRegistro(Yo),
-	PidProponente = spawn_link(Yo, ?MODULEPROPONENTE, proponente, [Yo, Servidores,  dict:new()]),
-	PidAceptador = spawn_link(Yo, ?MODULEACEPTADOR, aceptador, [Yo, Servidores, dict:new()]),
+	BDInstancias = datos_paxos:crearRegistro(),
+	PidProponente = spawn_link(node(), ?MODULEPROPONENTE, proponente, [Servidores,  dict:new()]),
+	PidAceptador = spawn_link(node(), ?MODULEACEPTADOR, aceptador, [Servidores, dict:new()]),
 	%Se registran
 	register(proponente, PidProponente),
 	register(aceptador, PidAceptador),
-	bucle_recepcion(Servidores, Yo, BDInstancias).
+	bucle_recepcion(Servidores, BDInstancias).
 
   
 
 %%-----------------------------------------------------------------------------
-bucle_recepcion(Servidores, Yo, BDInstancias) ->
+bucle_recepcion(Servidores, BDInstancias) ->
 
     receive
 	{start_instancia, NuInstancia, Valor, From} ->
@@ -256,17 +256,17 @@ bucle_recepcion(Servidores, Yo, BDInstancias) ->
 			%Ya había proponentes y no tienes el registro, preguntarlo
 			{ExisteValor, ValorNuevo} = enviarEstado(Servidores, NuInstancia),
 			if ExisteValor and not ExisteRegistro ->
-				{paxos, Yo} ! {decidido, {NuInstancia, ValorNuevo}};
+				{paxos, node()} ! {decidido, {NuInstancia, ValorNuevo}};
 			  true -> nada
 			end,
-			bucle_recepcion(Servidores, Yo, BDInstancias);
+			bucle_recepcion(Servidores, BDInstancias);
 
 		%start instancia
 		true -> From ! ok,
-			{proponente, Yo}  ! {instancia, NuInstancia, Valor},
+			{proponente, node()}  ! {instancia, NuInstancia, Valor},
 			BDnewnew = datos_paxos:mensajeAdd(BDInstancias),
 			BDnewOtra = datos_paxos:intentarSetInstanciaMaximaVista(BDnewnew, NuInstancia),
-			bucle_recepcion(Servidores, Yo, BDnewOtra)
+			bucle_recepcion(Servidores, BDnewOtra)
 		end;
 
 
@@ -279,14 +279,14 @@ bucle_recepcion(Servidores, Yo, BDInstancias) ->
 			?PRINT("Decidida instancia ~p en nodo: ~p~n",[{NuInstancia, Valor}, node()])
 		end,
 		BDnewOtra = datos_paxos:intentarSetInstanciaMaximaVista(BDnew, NuInstancia),
-		bucle_recepcion(Servidores, Yo, BDnewOtra);
+		bucle_recepcion(Servidores, BDnewOtra);
 
 	{registroExiste, NumInstancia, From, Estado} ->
 		%Devuelve un booleano correspondiente a si para ese numero de instancia, se tiene valor en el registro
 		 ExisteRegistro=datos_paxos:existeRegistro(BDInstancias, NumInstancia),
 	         From ! {respuesta_reg_estado, ExisteRegistro, Estado},
    		 BDnewnew = datos_paxos:mensajeAdd(BDInstancias),
-		 bucle_recepcion(Servidores, Yo, BDnewnew);
+		 bucle_recepcion(Servidores,  BDnewnew);
 
 	{registroExisteValor, NumInstancia, From} ->
 		%Devuelve el valor correspondiente de una instancia, se tiene valor en el registro
@@ -295,100 +295,100 @@ bucle_recepcion(Servidores, Yo, BDInstancias) ->
 			true-> 	Valor = sin_valor %No hay valor en el registro
 			end,
 	         From ! {respuesta_reg_estado_valor, ExisteRegistro, Valor},
-		 bucle_recepcion(Servidores, Yo, BDInstancias);
+		 bucle_recepcion(Servidores,  BDInstancias);
 
 
 	{maximaInstancia, Pid} -> %Devuelve el numero de instancia maxima vista
 		Pid ! {max, datos_paxos:getInstanciaMaximaVista(BDInstancias)},
-		bucle_recepcion(Servidores, Yo, BDInstancias);
+		bucle_recepcion(Servidores,  BDInstancias);
 
 	{minimaInstancia, Pid} -> %Devuelve el numero de instancia minima (maxima de funcion hecho())
 		Pid ! {min, datos_paxos:getInstanciaMinima(BDInstancias)},
-		bucle_recepcion(Servidores, Yo, BDInstancias);
+		bucle_recepcion(Servidores,  BDInstancias);
 
 	{minimaInstanciaNodos, Pid} ->
 		%Crea un proceso que calculará y enviará a Pid el número minimo de instancias
 		%De entre todos los servidores paxos
-		spawn_link(Yo, ?MODULE, calculoMinimo, [Servidores, Pid]),
-		bucle_recepcion(Servidores, Yo, BDInstancias);
+		spawn_link(node(), ?MODULE, calculoMinimo, [Servidores, Pid]),
+		bucle_recepcion(Servidores,  BDInstancias);
 
 
 	{hecho, NuInstancia} ->	%Edita el valor de valiable minima hecho, que no se vovlerá a utilizar
 		BDnew = datos_paxos:setInstanciaMinima(BDInstancias, NuInstancia),
-                bucle_recepcion(Servidores, Yo, BDnew);
+                bucle_recepcion(Servidores,  BDnew);
 
 	{borrar_memoria, Minimo} ->%Eliminar memoria solo con el minimo de todos, procesos relacionados, aceptador y proponentes
 		BDnewnew = eliminarMemoria(Minimo, BDInstancias),
-                bucle_recepcion(Servidores, Yo, BDnewnew);
+                bucle_recepcion(Servidores,  BDnewnew);
 
         no_fiable    ->%Edita varaible de fiable = false
 		BDnew = datos_paxos:setFiabilidad(BDInstancias,false),
-		bucle_recepcion(Servidores, Yo, BDnew);
+		bucle_recepcion(Servidores,  BDnew);
        
         fiable       -> %Edita varaible de fiable = true
 		BDnew = datos_paxos:setFiabilidad(BDInstancias,true),
-                bucle_recepcion(Servidores, Yo, BDnew);
+                bucle_recepcion(Servidores,  BDnew);
 
  	{getBD, Pid}    -> %Devuelve la BDinstancias al Pid
 		Pid ! BDInstancias,
-		bucle_recepcion(Servidores, Yo, BDInstancias);
+		bucle_recepcion(Servidores, BDInstancias);
 
 	{getInstanciasAceptadores, Estado, Pid, TipoMensaje}   -> 
 		%Devuelve el diccionaro de cada instancia  y el Pid de su aceptador
 		Pid ! {instanciasAceptadores, TipoMensaje, datos_paxos:getInstanciasAceptadores(BDInstancias), Estado},
 		BDnewnew = datos_paxos:mensajeAdd(BDInstancias),
-		bucle_recepcion(Servidores, Yo, BDnewnew);
+		bucle_recepcion(Servidores, BDnewnew);
 
         {addInstanciaProponente, Instancia, Pid}       ->   
 		%Devuelve el diccionaro de cada instancia  y el Pid de su proponente
 		BDnew = datos_paxos:addInstanciaProponente(BDInstancias, {Instancia, Pid}),
-	      	bucle_recepcion(Servidores, Yo, BDnew);
+	      	bucle_recepcion(Servidores, BDnew);
 
         {addInstanciaAceptadores, Instancia, Pid}       ->  
 		BDnew = datos_paxos:addInstanciaAceptador(BDInstancias, {Instancia, Pid}),
-	      	bucle_recepcion(Servidores, Yo, BDnew);
+	      	bucle_recepcion(Servidores, BDnew);
 
         {es_fiable, Pid} -> %Devuelve el valor de fiable
 		Pid ! datos_paxos:getFiabilidad(BDInstancias),
-		bucle_recepcion(Servidores, Yo, BDInstancias);
+		bucle_recepcion(Servidores, BDInstancias);
 
         {limitar_acceso, Nodos} ->  % Limita acceso a solo Nodos
 		error_logger:tty(false), 
 		io:format("En nodo ~p solo se acepta a ~p ~p~n",[node(), Nodos, net_kernel:allow(Nodos)]),
 		net_kernel:allow(Nodos),
-		bucle_recepcion(Servidores, Yo, BDInstancias);
+		bucle_recepcion(Servidores, BDInstancias);
        
         {n_mensajes, Pid} ->%Devuelve numero de mensajes enviados en el algoritmo hasta el momento
 		Num = datos_paxos:getNumMensajes(BDInstancias),
 		Pid ! Num,
-		bucle_recepcion(Servidores, Yo, BDInstancias);
+		bucle_recepcion(Servidores, BDInstancias);
                     
-        ponte_sordo -> espero_escucha(Servidores, Yo, BDInstancias);
+        ponte_sordo -> espero_escucha(Servidores, BDInstancias);
         
         {'EXIT', _Pid, _DatoDevuelto} -> %%Cuando proceso proponente acaba
 		adios;
              
             %% mensajes para proponente y aceptador del servidor local
         Mensajes_prop_y_acept ->
-		simula_fallo_mensj_prop_y_acep(Servidores, Yo, Mensajes_prop_y_acept, BDInstancias, datos_paxos:getFiabilidad(BDInstancias))
+		simula_fallo_mensj_prop_y_acep(Servidores, Mensajes_prop_y_acept, BDInstancias, datos_paxos:getFiabilidad(BDInstancias))
     end.
     
 %%-----------------------------------------------------------------------------
-simula_fallo_mensj_prop_y_acep(Servidores, Yo, Mensaje, BDInstancias, Es_fiable) ->
+simula_fallo_mensj_prop_y_acep(Servidores, Mensaje, BDInstancias, Es_fiable) ->
 
     Aleatorio = random:uniform(1000),
       %si no fiable, eliminar mensaje con cierta aleatoriedad
     if  ((not Es_fiable) and (Aleatorio < 200)) -> 
-                bucle_recepcion(Servidores, Yo, BDInstancias);
+                bucle_recepcion(Servidores, BDInstancias);
                   % Y si lo es tratar el mensaje recibido correctamente
-        true -> gestion_mnsj_prop_y_acep(Servidores, Yo, Mensaje, BDInstancias)
+        true -> gestion_mnsj_prop_y_acep(Servidores, Mensaje, BDInstancias)
     end.
 
 
 %%-----------------------------------------------------------------------------
 % implementar tratamiento de mensajes recibidos en  Paxos
 % Tanto por proponentes como aceptadores
-gestion_mnsj_prop_y_acep(Servidores, Yo, Mensaje, BDInstancias) ->
+gestion_mnsj_prop_y_acep(Servidores, Mensaje, BDInstancias) ->
     % Mensajes que puede recibir el aceptador {prepara,N} {acepta,N,V}
     % Mensajes que puede recibir el proponente {prepara_ok,N,Na,Va} {acepta_ok,N}
 	BDnewnew = datos_paxos:mensajeAdd(BDInstancias),
@@ -404,33 +404,33 @@ gestion_mnsj_prop_y_acep(Servidores, Yo, Mensaje, BDInstancias) ->
 	{prepara_ok,_N,_Na,_Va, Nodo, _NumInstancia}  ->
 		?PRINT("Ok_prepara llega a: ~p de:~p~n",[node(), Nodo]),
 		 BDnewOtra = BDnewnew,
-		 {proponente, Yo}  ! Mensaje;
+		 {proponente, node()}  ! Mensaje;
 	{acepta_ok, _N, Nodo, _NumInstancia}  ->
 		?PRINT("Ok_acepta llega a: ~p de:~p~n",[node(), Nodo]),
 		 BDnewOtra = BDnewnew,
-		 {proponente, Yo}  ! Mensaje;
+		 {proponente, node()}  ! Mensaje;
 	{acepta_reject, _Np, _Nodo, _NumInstancia}  ->
 		 BDnewOtra = BDnewnew,
-		 {proponente, Yo}  ! Mensaje;
+		 {proponente, node()}  ! Mensaje;
 	{prepara_reject, _Np, _Nodo, _NumInstancia}  ->
 		 BDnewOtra = BDnewnew,
-		 {proponente, Yo}  ! Mensaje;
+		 {proponente, node()}  ! Mensaje;
 
 	_ ->	BDnewOtra = BDnewnew,
 		?PRINT("Recibido menasje no identificado: ~p~n",[Mensaje])
 	end,
 
-	bucle_recepcion(Servidores, Yo, BDnewOtra).
+	bucle_recepcion(Servidores, BDnewOtra).
 
 
 %%-----------------------------------------------------------------------------
-espero_escucha(Servidores, Yo, BDInstancias) ->
+espero_escucha(Servidores, BDInstancias) ->
     io:format("~p : Esperando a recibir escucha~n",[node()]),
     receive
         escucha ->
             io:format("~p : Salgo de la sordera !!~n",[node()]),
-            bucle_recepcion(Servidores, Yo, BDInstancias);
-        Resto -> io:format("ESTOYSORDO ~p: ~p ~n",[Resto, node()]),espero_escucha(Servidores, Yo, BDInstancias)
+            bucle_recepcion(Servidores, BDInstancias);
+        Resto -> io:format("ESTOYSORDO ~p: ~p ~n",[Resto, node()]),espero_escucha(Servidores, BDInstancias)
     end.
 
 
