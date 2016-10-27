@@ -16,7 +16,7 @@
 
 -define(T_ESPERAA, 150).
 -define(T_ESPERAB, 60).
--define(T_ETAPA, 3000).
+-define(T_ETAPA, 2000).
 -define(PRINT(Texto,Datos), io:format(Texto, Datos)).
 -define(ENVIO(Mensj, Dest),
         io:format("Llega a nodo ~p se envia ~p a ~p~n",[node(), Mensj, Dest]), Dest ! Mensj).
@@ -64,7 +64,7 @@ aceptador(Servidores, ListaAceptadores)->
 				paxos ! {addInstanciaAceptadores, NumInstancia, Proc},
 				NuevaListaAceptadores = dict:append(NumInstancia, Proc, ListaAceptadores),
 				Proc ! {acepta, {NumInstancia, Valor}, N, NodoFrom},
-				spawn_link(?MODULE, comprobar_estado_paxos, [Proc]),
+				Proc ! crear_control,
 				aceptador(Servidores, NuevaListaAceptadores)
 			end;
 
@@ -123,12 +123,17 @@ aceptadorUnaInstancia(Servidores, NumeroInstancia, N_p, N_a, V_a )->
 
 		comprobar_estado -> %Comprueba el estado de los valores de otros nodos de paxos, por si vas retrasado
 			{ExisteValor, Valor} = paxos:enviarEstado(Servidores, NumeroInstancia),
+			io:format("Comprobando el valor de la instancia ~p en el nodo ~p~n",[NumeroInstancia, node()]),
 			if ExisteValor ->
 				{paxos, node()} ! {decidido, {NumeroInstancia, Valor}},
+				io:format("Se actualiza el valor de la instancia ~p en el nodo ~p~n",[NumeroInstancia, node()]);
 			true-> sigo_esperando
 			end,
 			aceptadorUnaInstancia(Servidores, NumeroInstancia, N_p, N_a, V_a);
 		
+		crear_control -> spawn_link(?MODULE, comprobar_estado_paxos, [self()]),
+			aceptadorUnaInstancia(Servidores, NumeroInstancia, N_p, N_a, V_a);
+
 		kill -> termino;
 
 		Mensaje   ->  io:format("Mensaje en aceptador no identificado ~p, ~p ~n",[node(), Mensaje]),
